@@ -1,0 +1,295 @@
+from nltk.corpus import wordnet as wn
+import networkx as nx
+import matplotlib.pyplot as plt
+from future.builtins import input
+import pylab
+import numpy as np
+#import matplotlib
+#from matplotlib.pyplot import figure
+
+first_click = (0,0)
+second_click = (0,0)
+
+annote = 0
+
+first_item = "none1"
+second_item = "none2"
+
+list_of_changed_positions = []
+list_of_changed_nodes = []
+
+
+class AnnoteFinder:
+    def __init__(self, xdata, ydata, annotes, axis=None, xtol=None, ytol=None):
+        self.data = zip(xdata, ydata, annotes)
+        #print (self.data) # for the items (prints the nodes of the graph basically)
+        if xtol is None:
+            xtol = ((max(xdata) - min(xdata))/float(len(xdata)))/2
+        if ytol is None:
+            ytol = ((max(ydata) - min(ydata))/float(len(ydata)))/2
+
+        if xtol <= 0.0001:
+            xtol=0.1
+        if ytol <= 0.0001:
+            ytol = 0.2
+
+        #print (xtol)
+        #print (ytol)
+
+        self.xtol = xtol
+        self.ytol = ytol
+        if axis is None:
+            axis = pylab.gca()
+        self.axis = axis
+        self.drawnAnnotations = {}
+        self.links = []
+
+
+    def __call__(self, event):
+        if event.inaxes:
+            clickX = event.xdata
+            clickY = event.ydata
+            if self.axis is None or self.axis==event.inaxes:
+                annotes = []
+
+                #print(clickX , clickY)
+
+                for x,y,a in self.data:
+                    if clickX-self.xtol < x < clickX+self.xtol and clickY-self.ytol < y < clickY+self.ytol :
+                        dx, dy = x-clickX, y-clickY
+                        annotes.append((dx*dx+dy*dy, x, y, a))
+
+
+                # tell that we are using the global variables
+                global annote
+                global first_item
+                global first_click
+                global second_item
+                global second_click
+                global list_of_changed_positions
+                global list_of_changed_nodes
+                global word_from_user
+
+                # the if() checks if the pressed area has an event (node)
+                if annotes:
+                    annotes.sort() # to select the nearest node
+                    distance, x, y, annote = annotes[0]
+                    self.visitNode(annote)
+
+
+                # check if it's the first click or the second
+                if first_click == (0, 0) and first_item == "none1":
+
+                    first_click = (clickX, clickY)
+                    if annotes:
+                        first_item = annote # the if() checks if the pressed area has an event (node)
+
+                else:
+
+                    second_click = (clickX, clickY)
+                    if annotes:
+                        second_item = annote # the if() checks if the pressed area has an event (node)
+
+                    # check if the clicks are at the same place
+                    if first_click == second_click:
+                        if first_item == second_item:
+                            plt.clf()
+                            plt.close()
+
+                            first_click = (0, 0)
+                            first_item = "none1"
+
+                            list_of_changed_nodes = []
+                            list_of_changed_positions = []
+
+                            second_click = (0, 0)
+
+                            if annotes:
+                                second_item = "none2"  # the if() checks if the pressed area has an event (node)
+
+                            graphing(wn.synset(annote), [], [])
+
+                    else:
+                        graph_name = "none"
+                        i = 0
+                        while graph_name == "none" and i < self.data.__len__():
+                            if self.data[i][0] == 0 and self.data[i][1] == 0.7:
+                                graph_name = self.data[i][2]
+                            i += 1
+
+                        # for the case if we just click randomly not on any nodes
+                        if first_item != "none1":
+                            plt.clf()
+                            plt.close()
+                            # print (second_item, second_click)
+
+                            new_posit = second_click
+                            second_click = (0, 0)  # reset the 2nd clicker
+
+                            # print(graph_name)
+                            if first_item in list_of_changed_nodes:
+                                index_of_item = list_of_changed_nodes.index(first_item)
+                                list_of_changed_positions[index_of_item] = new_posit
+                            else:
+                                list_of_changed_nodes.append(first_item)
+                                list_of_changed_positions.append(new_posit)
+
+                            first_item = "none1"
+                            first_click = (0,0)
+
+                            print ("name" ,graph_name)
+
+                            graphing(wn.synset(graph_name), list_of_changed_nodes, list_of_changed_positions)
+
+                        first_item = "none1"
+                        first_click = (0,0)
+
+    # only to tell which node is visited
+    def visitNode(self, annote):
+        print (annote, "Pressed by User")
+
+
+def get_coordinates_in_circle(n):  # coodinates for the nodes
+    thetas = [2*np.pi*(float(i)/n) for i in range(n)]
+    return_list = [(np.cos(theta),np.sin(theta)) for theta in thetas]
+    return return_list
+
+
+def contain(searched, word):  # see if <searched> is a hypernym of <word>
+    hypers =[]
+    for i in range(len(word.hypernyms())):
+        hypers.append(word.hypernyms()[i].name())
+    if searched in hypers:
+        return 1
+    return 0
+
+
+def hypernyms_coordinates(list_of_hyp):
+    list_of_hyp_coordinates = []
+    if len(list_of_hyp)==1:
+        list_of_hyp_coordinates=[(0,0.9)]
+    if len(list_of_hyp)==2:
+        list_of_hyp_coordinates=[(-0.3, 0.9),(0.3, 0.9)]
+    if len(list_of_hyp)==3:
+        list_of_hyp_coordinates=[(-0.3, 0.9),(0,0.9),(0.3, 0.9)]
+
+    return list_of_hyp_coordinates
+
+
+def hyponyms_coordinates(list_of_hyp):
+    last_row = len(list_of_hyp)
+    last_words = last_row % 8
+    list_of_hyp_coordinates = []
+    x_coordinates = -2.1
+    y_coordinates = 0.3
+
+
+    for i in range(last_row - last_words):
+        list_of_hyp_coordinates.append((x_coordinates,y_coordinates))
+        x_coordinates = x_coordinates + 0.6
+        if x_coordinates > 2.1:
+            y_coordinates = y_coordinates - 0.3
+            x_coordinates = -2.1
+
+    if last_words > 0:
+        x_coordinates = -((last_words-1) * 0.3)
+        for i in range(last_words):
+            list_of_hyp_coordinates.append((x_coordinates,y_coordinates))
+            x_coordinates = x_coordinates + 0.6
+
+
+    return list_of_hyp_coordinates
+
+
+def graphing(w, changed_nodes , changed_coord):
+    print("Change Positions of Nodes:", changed_nodes.__len__())
+
+    fig = plt.figure(num=None, figsize=(16, 7), dpi=75)
+    G = nx.OrderedMultiDiGraph()  # or nx.Graph() (small difference)
+
+    color_mapping = []
+
+    list_of_hypernyms = []
+    for h in w.hypernyms():
+        list_of_hypernyms.append(h.name())
+
+    list_of_hyponyms = []
+    for h in w.hyponyms():
+        list_of_hyponyms.append(h.name())
+
+    G.add_node(w.name())
+
+    for h in list_of_hypernyms:
+        G.add_node(h)
+        G.add_edge(w.name(), h)
+
+    for h in list_of_hyponyms:
+        G.add_node(h)
+        G.add_edge(w.name(), h)
+
+    # set color of the nodes
+    for n in G:
+        if n == w.name():
+            color_mapping.append('lightblue')
+        else:
+            if contain(n, w) == 1:
+                color_mapping.append('yellow')
+            else:
+                color_mapping.append('lightgreen')
+
+    # find the coordinates of the nodes (x,y)
+    fixed_nodes = [n for n in G.nodes()]  # get the nodes of the Graph
+    fixed_positions = {}  # will take coordinates for their respective nodes (dictionary)
+
+    #circular_positions = get_coordinates_in_circle(len(G.nodes()))
+
+    coord_of_hypernyms = hypernyms_coordinates(list_of_hypernyms)
+    coord_of_hyponyms = hyponyms_coordinates(list_of_hyponyms)
+
+    j_hyper=0
+    j_hypo=0
+
+    for i, p in enumerate(fixed_nodes):
+        if p in list_of_hypernyms:
+            
+            fixed_positions[p] = coord_of_hypernyms[j_hyper]
+            j_hyper=j_hyper+1
+        elif p == w.name():
+            fixed_positions[p] = (0,0.7)
+        else:
+            fixed_positions[p] = coord_of_hyponyms[j_hypo]
+            j_hypo = j_hypo + 1
+
+    #change the position of the clicked nodes
+    if changed_coord:
+        for i,curr in enumerate(changed_nodes):
+            fixed_positions[curr] = changed_coord[i]
+            global first_click
+            first_click = (0, 0)
+            global first_item
+            first_item = "none1"
+
+    # the layout gives us the nodes position
+    pos = nx.spring_layout(G, pos=fixed_positions, fixed=fixed_nodes)
+
+    # title / save / draw
+    plt.title("Holonyms/Hypernyms of " + str(w), size=20, color='blue')
+    #plt.savefig("path.png")
+    nx.draw(G, pos, width=1, node_color=color_mapping, with_labels=True)
+    nx.draw_networkx_labels(G,pos, font_color="darkred")
+
+    # tell if a node is pressed and which one
+    x, y, annotes = [], [], []
+    for key in pos:
+        d = pos[key]
+        annotes.append(key)
+        x.append(d[0])
+        y.append(d[1])
+
+    af = AnnoteFinder(x, y, annotes)
+    fig.canvas.mpl_connect('button_press_event', af)
+    plt.show()
+
+
+word_from_user = wn.synset(input())
+graphing(word_from_user,[],[])
